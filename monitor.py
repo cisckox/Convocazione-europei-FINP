@@ -53,7 +53,7 @@ def main():
         if figlio_convocato:
             msg = (
                 "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
-                "🎉 TUO FIGLIO CEFFALIA È STATO CONVOCATO!\n\n"
+                "🎉 ANDREA CEFFALIA È STATO CONVOCATO!\n\n"
                 "👉 Vai subito qui:\nhttps://www.finp.it/i-convocati"
             )
         elif has_athletes:
