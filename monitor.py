@@ -4,15 +4,26 @@ import requests
 from bs4 import BeautifulSoup
 from twilio.rest import Client
 
-URL = os.environ["TARGET_URL"]
+URL = "https://www.finp.it/i-convocati"
 PREV_HASH_FILE = "last_hash.txt"
 
-def get_page_text(url):
+def get_content():
     headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(url, headers=headers, timeout=15)
+    r = requests.get(URL, headers=headers, timeout=15)
     soup = BeautifulSoup(r.text, "html.parser")
-    # Prende tutto il testo visibile della pagina
-    return soup.get_text(separator=" ", strip=True)
+    
+    # Prende solo il contenuto principale della pagina (esclude menu e footer)
+    main = soup.find("main") or soup.find("article") or soup.find("div", class_="container")
+    if main:
+        text = main.get_text(separator=" ", strip=True)
+    else:
+        text = soup.get_text(separator=" ", strip=True)
+    
+    # Controlla se ci sono già convocati (parole chiave)
+    keywords = ["convocato", "atleta", "classe", "staffetta", "nuoto"]
+    has_athletes = any(k in text.lower() for k in keywords)
+    
+    return text, has_athletes
 
 def send_whatsapp(message):
     client = Client(
@@ -26,26 +37,33 @@ def send_whatsapp(message):
     )
 
 def main():
-    text = get_page_text(URL)
+    text, has_athletes = get_content()
     current_hash = hashlib.md5(text.encode()).hexdigest()
 
-    # Leggi hash precedente (salvato come artifact nel workflow)
     prev_hash = ""
     if os.path.exists(PREV_HASH_FILE):
         with open(PREV_HASH_FILE) as f:
             prev_hash = f.read().strip()
 
-    # Salva hash corrente
     with open(PREV_HASH_FILE, "w") as f:
         f.write(current_hash)
 
     if prev_hash and current_hash != prev_hash:
+        if has_athletes:
+            msg = (
+                "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
+                "✅ I CONVOCATI SONO STATI PUBBLICATI!\n\n"
+                "👉 Vai subito qui:\nhttps://www.finp.it/i-convocati"
+            )
+        else:
+            msg = (
+                "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
+                "⚠️ La pagina convocati è stata aggiornata.\n"
+                "Controlla se sono stati aggiunti atleti:\n"
+                "👉 https://www.finp.it/i-convocati"
+            )
         print("CAMBIAMENTO RILEVATO!")
-        send_whatsapp(
-            f"🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
-            f"La pagina dei convocati è stata aggiornata!\n\n"
-            f"👉 Controlla qui: {URL}"
-        )
+        send_whatsapp(msg)
     else:
         print("Nessun cambiamento.")
 
