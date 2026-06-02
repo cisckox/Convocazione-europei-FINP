@@ -2,7 +2,8 @@ name: Monitor Convocati Paralimpici
 
 on:
   schedule:
-    - cron: '0 * * * *'  # ogni ora
+    - cron: '0 * * * *'
+    - cron: '30 * * * *'
   workflow_dispatch:       # esecuzione manuale
 
 jobs:
