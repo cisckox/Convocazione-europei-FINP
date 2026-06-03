@@ -1,9 +1,6 @@
 name: Monitor Convocati Paralimpici
 
 on:
-  schedule:
-    - cron: '0 * * * *'
-    - cron: '30 * * * *'
   workflow_dispatch:
   repository_dispatch:
     types: [cron-job]
