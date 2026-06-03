@@ -54,11 +54,11 @@ def main():
             msg = (
                 "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
                 "🎉 ANDREA CEFFALIA È STATO CONVOCATO!\n\n"
-                "👉 Vai subito qui:\nhttps://www.finp.it/i-convocati"
+                "👉 Vai a vedere:\nhttps://www.finp.it/i-convocati"
             )
         elif has_athletes:
             msg = (
                 "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
                 "✅ I CONVOCATI SONO STATI PUBBLICATI!\n\n"
-                "👉 Controlla se c'è tuo figlio:\nhttps://www.finp.it/i-convocati"
+                "👉 Vai a vedere:\nhttps://www.finp.it/i-convocati"
             )
