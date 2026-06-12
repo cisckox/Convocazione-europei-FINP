@@ -7,11 +7,48 @@ from twilio.rest import Client
 import pypdf
 
 URL = "https://www.finp.it/i-convocati"
-PREV_HASH_FILE = "last_hash.txt"
 COGNOME = "ceffalia"
+GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "")
+GITHUB_TOKEN = os.environ.get("GH_TOKEN", "")
+
+def get_stored_hash():
+    """Legge l'hash precedente dal Secret GitHub"""
+    try:
+        # Usiamo una variabile d'ambiente passata dal workflow
+        return os.environ.get("PREV_HASH", "")
+    except:
+        return ""
+
+def update_stored_hash(new_hash):
+    """Aggiorna l'hash salvato tramite API GitHub"""
+    try:
+        import base64
+        from nacl import encoding, public
+
+        # Recupera la public key del repo per cifrare il secret
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+        key_resp = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/actions/secrets/public-key",
+            headers=headers
+        )
+        key_data = key_resp.json()
+        public_key = public.PublicKey(key_data["key"].encode("utf-8"), encoding.Base64Encoder())
+        sealed_box = public.SealedBox(public_key)
+        encrypted = base64.b64encode(sealed_box.encrypt(new_hash.encode("utf-8"))).decode("utf-8")
+
+        requests.put(
+            f"https://api.github.com/repos/{GITHUB_REPO}/actions/secrets/PREV_HASH",
+            headers=headers,
+            json={"encrypted_value": encrypted, "key_id": key_data["key_id"]}
+        )
+        print(f"Hash aggiornato: {new_hash}")
+    except Exception as e:
+        print(f"Errore aggiornamento hash: {e}")
 
 def get_page_links(soup):
-    """Trova tutti i link a PDF nella pagina"""
     links = []
     for a in soup.find_all("a", href=True):
         if ".pdf" in a["href"].lower():
@@ -22,7 +59,6 @@ def get_page_links(soup):
     return links
 
 def read_pdf_text(pdf_url):
-    """Scarica e legge il testo di un PDF"""
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(pdf_url, headers=headers, timeout=15)
@@ -40,11 +76,9 @@ def get_content():
     r = requests.get(URL, headers=headers, timeout=15)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # Testo della pagina (solo contenuto principale)
     main = soup.find("main") or soup.find("article") or soup.find("div", class_="container")
     page_text = (main or soup).get_text(separator=" ", strip=True)
 
-    # Leggi tutti i PDF presenti nella pagina
     pdf_links = get_page_links(soup)
     pdf_text = ""
     for link in pdf_links:
@@ -52,21 +86,13 @@ def get_content():
         pdf_text += read_pdf_text(link)
 
     full_text = page_text + " " + pdf_text
-
-    # Controlla se ci sono convocati
-    keywords = ["convocato", "atleta", "criterio", "selezione", "kocaeli"]
-    has_athletes = any(k in full_text.lower() for k in keywords) and len(pdf_links) > 0
-
-    # Cerca il cognome nel testo della pagina E nei PDF
+    has_athletes = any(k in full_text.lower() for k in ["criterio", "selezione", "kocaeli"]) and len(pdf_links) > 0
     figlio_convocato = COGNOME.lower() in full_text.lower()
 
-    return full_text, has_athletes, figlio_convocato, pdf_links
+    return full_text, has_athletes, figlio_convocato
 
 def send_whatsapp(message):
-    client = Client(
-        os.environ["TWILIO_ACCOUNT_SID"],
-        os.environ["TWILIO_AUTH_TOKEN"]
-    )
+    client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
     client.messages.create(
         body=message,
         from_=os.environ["TWILIO_WHATSAPP_FROM"],
@@ -74,41 +100,39 @@ def send_whatsapp(message):
     )
 
 def main():
-    full_text, has_athletes, figlio_convocato, pdf_links = get_content()
+    full_text, has_athletes, figlio_convocato = get_content()
     current_hash = hashlib.md5(full_text.encode()).hexdigest()
+    prev_hash = get_stored_hash()
 
-    prev_hash = ""
-    if os.path.exists(PREV_HASH_FILE):
-        with open(PREV_HASH_FILE) as f:
-            prev_hash = f.read().strip()
+    print(f"Hash precedente: {prev_hash}")
+    print(f"Hash corrente:   {current_hash}")
 
-    with open(PREV_HASH_FILE, "w") as f:
-        f.write(current_hash)
+    if prev_hash == current_hash:
+        print("Nessun cambiamento.")
+        return
 
-    # Notifica immediata se trova il cognome (indipendentemente dai cambiamenti)
+    # C'è un cambiamento — aggiorna l'hash e manda notifica
+    update_stored_hash(current_hash)
+
     if figlio_convocato:
-        print("FIGLIO CONVOCATO!")
         send_whatsapp(
             "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
             "🎉 TUO FIGLIO CEFFALIA È STATO CONVOCATO!\n\n"
-            "👉 Vai subito qui:\nhttps://www.finp.it/i-convocati"
+            "👉 https://www.finp.it/i-convocati"
         )
-    elif prev_hash and current_hash != prev_hash:
-        if has_athletes:
-            send_whatsapp(
-                "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
-                "✅ I CONVOCATI SONO STATI PUBBLICATI!\n\n"
-                "👉 Controlla se c'è tuo figlio:\nhttps://www.finp.it/i-convocati"
-            )
-        else:
-            send_whatsapp(
-                "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
-                "⚠️ La pagina convocati è stata aggiornata.\n"
-                "👉 https://www.finp.it/i-convocati"
-            )
-        print("CAMBIAMENTO RILEVATO!")
+    elif has_athletes:
+        send_whatsapp(
+            "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
+            "✅ CONVOCATI AGGIORNATI!\n\n"
+            "👉 Controlla se c'è tuo figlio:\nhttps://www.finp.it/i-convocati"
+        )
     else:
-        print("Nessun cambiamento.")
+        send_whatsapp(
+            "🏊 NAZIONALE PARALIMPICA NUOTO\n\n"
+            "⚠️ La pagina è stata aggiornata.\n"
+            "👉 https://www.finp.it/i-convocati"
+        )
+    print("CAMBIAMENTO RILEVATO - notifica inviata!")
 
 if __name__ == "__main__":
     main()
